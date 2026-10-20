@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}Edit reply{% endblock %}
+{% block content %}<a class="breadcrumb" href="/posts/{{ post.id }}">← {{ post.title }}</a><section class="form-card"><h1>Edit your reply</h1><form method="post" action="/replies/{{ reply.id }}/edit"><input type="hidden" name="_csrf" value="{{ csrf }}"><label for="body">Message</label><textarea id="body" name="body" rows="8" maxlength="20000" required>{{ reply.body }}</textarea><button type="submit">Save reply</button></form></section>{% endblock %}

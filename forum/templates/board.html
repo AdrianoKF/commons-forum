@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block title %}{{ board.name }}{% endblock %}
+{% block content %}<a class="breadcrumb" href="/">← All boards</a><div class="page-heading"><div><p class="eyebrow">{{ 'Members’ board' if board.private else 'Open board' }}</p><h1>{{ board.name }}</h1><p>{{ board.description }}</p></div>{% if user %}<a class="button" href="/boards/{{ board.id }}/new">Start a conversation</a>{% endif %}</div>
+<div class="discussion-list">{% for post in posts %}<a class="discussion-row" href="/posts/{{ post.id }}"><div><div class="badges">{% if post.pinned %}<span>Pinned</span>{% endif %}{% if post.locked %}<span>Locked</span>{% endif %}{% if post.hidden %}<span>Hidden</span>{% endif %}</div><h2>{{ post.title }}</h2><p>Started by {{ post.author.username }}</p></div><span aria-hidden="true">→</span></a>{% else %}<div class="empty"><h2>A fresh page.</h2><p>Be the first to start a conversation here.</p></div>{% endfor %}</div>{% endblock %}

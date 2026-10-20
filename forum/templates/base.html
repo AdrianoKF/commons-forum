@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Commons{% endblock %} · A place to compare notes</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">c.</span>commons</a>
+    <nav aria-label="Main navigation">
+      <a href="/">Boards</a><a href="/search">Search</a>
+      {% if user %}
+        {% if user.role == 'admin' %}<a href="/admin">Admin</a>{% endif %}
+        <span class="identity">{{ user.username }}</span>
+        <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="text-button" type="submit">Sign out</button></form>
+      {% else %}<a href="/login">Sign in</a><a class="button small" href="/register">Join us</a>{% endif %}
+    </nav>
+  </header>
+  <main id="main">{% block content %}{% endblock %}</main>
+  <footer>Commons <span>A little space for good conversations.</span></footer>
+</body>
+</html>

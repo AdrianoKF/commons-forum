@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}{{ attachment.filename }}{% endblock %}
+{% block content %}<a class="breadcrumb" href="/posts/{{ attachment.post_id }}">← Back to discussion</a><section class="form-card"><p class="eyebrow">Attachment preview</p><h1>{{ attachment.filename }}</h1><pre>{{ content }}</pre><a class="button" href="/attachments/{{ attachment.id }}/download">Download original</a></section>{% endblock %}

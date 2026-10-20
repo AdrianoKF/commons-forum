@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Join the Commons' if registering else 'Welcome back' }}{% endblock %}
+{% block content %}<section class="form-card narrow"><p class="eyebrow">Your place at the table</p><h1>{{ 'Join the Commons' if registering else 'Welcome back' }}</h1><p>{{ 'A username, a password, and something to share.' if registering else 'Sign in to pick up the conversation.' }}</p>
+<form method="post" action="{{ '/register' if registering else '/login' }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<label for="username">Username</label><input id="username" name="username" required minlength="3" maxlength="32" autocomplete="username" pattern="[a-z][a-z0-9_]{2,31}">
+{% if registering %}<p class="field-help">3–32 lowercase letters, numbers, or underscores. Start with a letter.</p>{% endif %}
+<label for="password">Password</label><input id="password" name="password" type="password" required maxlength="128" {% if registering %}minlength="12"{% endif %} autocomplete="{{ 'new-password' if registering else 'current-password' }}">
+{% if registering %}<p class="field-help">At least 12 characters.</p>{% endif %}<button type="submit">{{ 'Create account' if registering else 'Sign in' }}</button></form></section>{% endblock %}

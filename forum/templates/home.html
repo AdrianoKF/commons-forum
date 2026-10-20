@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><p class="eyebrow">The community noticeboard</p><h1>Good things start<br>with a conversation.</h1><p>Compare notes. Ask a question. Make something together.<br>Find your corner of the Commons.</p></section>
+<div class="section-heading"><h2>Our boards</h2><span>{{ boards|length }} places to gather</span></div>
+<div class="board-grid">{% for board in boards %}
+<a href="/boards/{{ board.id }}" class="board-card"><span class="eyebrow">{% if board.private %}Members’ board{% else %}Open to everyone{% endif %}</span><h2>{{ board.name }} <span aria-hidden="true">↗</span></h2><p>{{ board.description }}</p><span class="card-footer">View conversations →</span></a>
+{% endfor %}</div>
+{% if not user %}<p class="hint">Have something to share? <a href="/register">Create an account</a> to join the conversation.</p>{% endif %}
+{% endblock %}
