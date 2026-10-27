@@ -38,6 +38,7 @@ def app(tmp_path):
     with application.state.session_factory() as db:
         populate(db, application.state.settings)
     yield application
+    application.state.auth_work_limiter.close()
     application.state.engine.dispose()
 
 
