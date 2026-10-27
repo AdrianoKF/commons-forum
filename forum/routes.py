@@ -19,6 +19,7 @@ from .policy import (
     visible_boards,
 )
 from .security import (
+    check_auth_attempt,
     check_csrf,
     current_user,
     database,
@@ -26,6 +27,7 @@ from .security import (
     identity,
     require_user,
     rotate_session,
+    run_auth_work,
     verify_password,
 )
 from .storage import original_path, preview_path, store_attachment
@@ -72,7 +74,11 @@ async def register(request: Request, session=Depends(identity), db=Depends(datab
     password = str(form.get("password", ""))
     if not re.fullmatch(r"[a-z][a-z0-9_]{2,31}", username) or not 12 <= len(password) <= 128:
         raise HTTPException(422, "Use a 3–32 character username and a 12–128 character password.")
-    user = User(username=username, password_hash=hash_password(password), role="member")
+    check_auth_attempt(request, "register", username)
+    if db.scalar(select(User.id).where(User.username == username)) is not None:
+        raise HTTPException(409, "That username is already registered.")
+    password_hash = await run_auth_work(request, hash_password, password)
+    user = User(username=username, password_hash=password_hash, role="member")
     db.add(user)
     try:
         db.flush()
@@ -90,9 +96,11 @@ async def login(request: Request, session=Depends(identity), db=Depends(database
     password = str(form.get("password", ""))
     if len(username) > 32 or len(password) > 128:
         raise HTTPException(401, "Username or password was not recognized.")
+    check_auth_attempt(request, "login", username)
     user = db.scalar(select(User).where(User.username == username))
     encoded = user.password_hash if user else request.app.state.dummy_password_hash
-    if not verify_password(password, encoded) or user is None:
+    verified = await run_auth_work(request, verify_password, password, encoded)
+    if not verified or user is None:
         raise HTTPException(401, "Username or password was not recognized.")
     rotate_session(db, request, session, user.id)
     return redirect("/")

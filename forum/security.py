@@ -1,7 +1,12 @@
+import asyncio
 import hashlib
 import hmac
+import math
 import secrets
+import threading
 import time
+from collections import OrderedDict, deque
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import delete
@@ -9,6 +14,147 @@ from sqlalchemy import delete
 from .models import LoginSession, User
 
 COOKIE_NAME = "commons_session"
+
+
+class AuthWorkLimitExceeded(RuntimeError):
+    pass
+
+
+class AuthAttemptLimiter:
+    """Bound accepted authentication attempts without retaining unlimited keys."""
+
+    def __init__(
+        self,
+        window_seconds=60,
+        source_limit=20,
+        account_limit=10,
+        max_keys=10_000,
+        clock=time.monotonic,
+    ):
+        if min(window_seconds, source_limit, account_limit, max_keys) <= 0:
+            raise ValueError("Authentication limits must be positive.")
+        self.window_seconds = window_seconds
+        self.source_limit = source_limit
+        self.account_limit = account_limit
+        self.max_keys = max_keys
+        self.clock = clock
+        self._source_attempts = OrderedDict()
+        self._account_attempts = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _active(self, table, key, now):
+        attempts = table.get(key)
+        if attempts is None:
+            return None
+        cutoff = now - self.window_seconds
+        while attempts and attempts[0] <= cutoff:
+            attempts.popleft()
+        if not attempts:
+            del table[key]
+            return None
+        return attempts
+
+    def _discard_expired(self, table, now):
+        cutoff = now - self.window_seconds
+        while table:
+            attempts = next(iter(table.values()))
+            if attempts[-1] > cutoff:
+                break
+            table.popitem(last=False)
+
+    def _record(self, table, key, now):
+        attempts = table.get(key)
+        if attempts is None:
+            attempts = deque()
+            table[key] = attempts
+        attempts.append(now)
+        table.move_to_end(key)
+
+    def admit(self, source, operation, account):
+        now = self.clock()
+        account_key = (operation, account)
+        with self._lock:
+            source_attempts = self._active(self._source_attempts, source, now)
+            account_attempts = self._active(self._account_attempts, account_key, now)
+            self._discard_expired(self._source_attempts, now)
+            self._discard_expired(self._account_attempts, now)
+            blocked = []
+            if source_attempts and len(source_attempts) >= self.source_limit:
+                blocked.append(source_attempts[0])
+            if account_attempts and len(account_attempts) >= self.account_limit:
+                blocked.append(account_attempts[0])
+            if source_attempts is None and len(self._source_attempts) >= self.max_keys:
+                blocked.append(next(iter(self._source_attempts.values()))[-1])
+            if account_attempts is None and len(self._account_attempts) >= self.max_keys:
+                blocked.append(next(iter(self._account_attempts.values()))[-1])
+            if blocked:
+                remaining = max(self.window_seconds - (now - oldest) for oldest in blocked)
+                return max(1, math.ceil(remaining))
+            self._record(self._source_attempts, source, now)
+            self._record(self._account_attempts, account_key, now)
+        return None
+
+
+class AuthWorkLimiter:
+    """Reject excess password work before submitting it to a worker thread."""
+
+    def __init__(self, capacity=2):
+        if capacity <= 0:
+            raise ValueError("Authentication work capacity must be positive.")
+        self.capacity = capacity
+        self._active = 0
+        self._lock = threading.Lock()
+        self._executor = ThreadPoolExecutor(
+            max_workers=capacity, thread_name_prefix="forum-auth"
+        )
+        self._closed = False
+
+    def _finished(self, _future):
+        with self._lock:
+            self._active -= 1
+
+    async def run(self, operation, *args):
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Authentication work limiter is closed.")
+            if self._active >= self.capacity:
+                raise AuthWorkLimitExceeded
+            self._active += 1
+        try:
+            worker = self._executor.submit(operation, *args)
+        except BaseException:
+            with self._lock:
+                self._active -= 1
+            raise
+        worker.add_done_callback(self._finished)
+        return await asyncio.wrap_future(worker)
+
+    def close(self):
+        with self._lock:
+            self._closed = True
+        self._executor.shutdown(wait=True)
+
+
+def check_auth_attempt(request: Request, operation: str, account: str):
+    source = request.client.host if request.client else "unknown"
+    retry_after = request.app.state.auth_attempt_limiter.admit(source, operation, account)
+    if retry_after is not None:
+        raise HTTPException(
+            429,
+            "Too many authentication attempts. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+async def run_auth_work(request: Request, operation, *args):
+    try:
+        return await request.app.state.auth_work_limiter.run(operation, *args)
+    except AuthWorkLimitExceeded:
+        raise HTTPException(
+            503,
+            "Authentication is temporarily busy. Try again.",
+            headers={"Retry-After": "1"},
+        ) from None
 
 
 def hash_password(password: str) -> str:
