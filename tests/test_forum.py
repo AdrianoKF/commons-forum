@@ -83,6 +83,39 @@ def test_upload_preview_download_delete(client, app):
     assert client.get(f"/attachments/{ident}/download").status_code == 404
 
 
+def test_attachment_download_respects_post_visibility(client, app):
+    assert client.get("/attachments/1/download").status_code == 404
+    assert (
+        client.get("/attachments/1/download", headers={"Range": "bytes=0-9"}).status_code
+        == 404
+    )
+
+    public = client.get("/attachments/3/download")
+    assert public.status_code == 200
+    assert public.content.startswith(b"Planter materials")
+
+    sign_in(client, "bob")
+    assert client.get("/attachments/1/download").status_code == 404
+    assert submit(client, "/logout").status_code == 303
+
+    sign_in(client, "alice")
+    private = client.get("/attachments/1/download")
+    assert private.status_code == 200
+    assert private.content.startswith(b"SYNTHETIC GARDEN CIRCLE NOTES")
+    assert "SYNTHETIC GARDEN CIRCLE NOTES" in client.get("/attachments/1/preview").text
+
+    with app.state.session_factory() as db:
+        db.get(Post, 4).hidden = True
+        db.commit()
+    assert client.get("/attachments/3/download").status_code == 404
+
+    assert submit(client, "/logout").status_code == 303
+    sign_in(client, "morgan")
+    hidden = client.get("/attachments/3/download")
+    assert hidden.status_code == 200
+    assert hidden.content.startswith(b"Planter materials")
+
+
 def test_search(client):
     sign_in(client)
     assert "Saturday planting plan" in client.get("/search", params={"q": "planting"}).text
